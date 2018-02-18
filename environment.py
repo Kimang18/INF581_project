@@ -1,4 +1,5 @@
 import numpy as np
+import random
 
 ### ENVIRONMENT ###
 
@@ -37,23 +38,34 @@ class Environment:
         # randomize positions of trashes
         self.trashes = []
         i = 0
+        random.seed(self.nb_trashes)
         while i < self.nb_trashes:
-            x = np.random.randint(0, self.width)
-            y = np.random.randint(0, self.height)
+            x = random.randint(0, self.width)
+            y = random.randint(0, self.height)
             if (x, y) not in self.trashes and (x, y) not in self.obstacles:
                 self.trashes.append((x, y))
                 i += 1
+        # what if the starting point coincides with the trashes position #
+
+        # for conversion between position and tile #
+        # this will help when using Q_table #
+        self.pairs = np.array([(i, j) for i in range(self.width) for j in range(self.height)])
 
     def display(self):
+        '''
+        display the environment
+
+        :return:None
+        '''
         for i in range(self.height + 1):
             for j in range(self.width + 1):
                 if j < self.width:
-                    if (i, j) in self.trashes:
-                        symbol = '*'
+                    if (i, j) == self.agent_state:
+                        symbol = 'o'
                     elif (i, j) in self.obstacles:
                         symbol = '#'
-                    elif (i, j) == self.agent_state:
-                        symbol = 'o'
+                    elif (i, j) in self.trashes:
+                        symbol = '*'
                     else:
                         symbol = ' '
                     print('| %s ' % symbol, end='',
@@ -61,8 +73,18 @@ class Environment:
                 else:
                     print('|', end='', flush=True)
             print()
-        print(self.trashes)
-        self.step(1)
+
+    def go_into_obstacle(self, new_pos):
+        '''
+
+        :param new_pos: next state after execution an action
+        :return: True if new position is an obstacle
+        '''
+        if new_pos in self.obstacles:
+            return True
+        else:
+            self.agent_state = new_pos
+            return False
 
     def step(self, a):
         '''
@@ -74,33 +96,96 @@ class Environment:
 
         # calculate new state
         go_into_wall = False
-        if a == 0:  # LEFT
+        go_into_obstacle = False
+        new_pos = self.agent_state
+        if a == 0:  # UP
             if self.agent_state[0] == 0:
                 go_into_wall = True
             else:
-                self.agent_state = (self.agent_state[0] - 1, self.agent_state[1])
-        elif a == 1:  # RIGHT
+                new_pos = (self.agent_state[0] - 1, self.agent_state[1])
+                go_into_obstacle = self.go_into_obstacle(new_pos)
+        elif a == 1:  # DOWN
             if self.agent_state[0] == self.width - 1:
                 go_into_wall = True
             else:
-                self.agent_state = (self.agent_state[0] + 1, self.agent_state[1])
-        elif a == 2:  # UP
+                new_pos = (self.agent_state[0] + 1, self.agent_state[1])
+                go_into_obstacle = self.go_into_obstacle(new_pos)
+        elif a == 2:  # LEFT
             if self.agent_state[1] == 0:
                 go_into_wall = True
             else:
-                self.agent_state = (self.agent_state[0], self.agent_state[1] - 1)
-        else:  # DOWN
+                new_pos = (self.agent_state[0], self.agent_state[1] - 1)
+                go_into_obstacle = self.go_into_obstacle(new_pos)
+        else:  # RIGHT
             if self.agent_state[1] == self.height - 1:
                 go_into_wall = True
             else:
-                self.agent_state = (self.agent_state[0], self.agent_state[1] + 1)
-        print(self.agent_state)
+                new_pos = (self.agent_state[0], self.agent_state[1] + 1)
+                go_into_obstacle = self.go_into_obstacle(new_pos)
 
         # calculate reward
-        if go_into_wall:
+        reward = -1
+        if go_into_wall or go_into_obstacle:
             reward = -5
         elif self.agent_state in self.trashes:
+            self.trashes.remove(self.agent_state)
             reward = 0
-        else:
-            reward = -1
-        print(reward)
+        done = False
+        if len(self.trashes) == 0:
+            done = True
+        info = "All is well!"
+        if go_into_wall:
+            info = "Go into walls!"
+        if go_into_obstacle:
+            info = "Go into obstacle!"
+        return [new_pos, reward, done, info]
+
+    def reset(self):
+        '''
+        reinitialize the starting position, and put back the trashes cleaned
+
+        :return:
+        '''
+        self.trashes.clear()
+        i = 0
+        random.seed(self.nb_trashes)
+        while i < self.nb_trashes:
+            x = random.randint(0, self.width)
+            y = random.randint(0, self.height)
+            if (x, y) not in self.trashes and (x, y) not in self.obstacles:
+                self.trashes.append((x, y))
+                i += 1
+        # random position starting point for robot
+        # new position must be different from obstacles!
+        new_pos = (np.random.randint(0, self.width), np.random.randint(0, self.height))
+        while new_pos in self.obstacles:
+            new_pos = (np.random.randint(0, self.width), np.random.randint(0, self.height))
+        self.agent_state = new_pos
+        return new_pos
+
+    def action_sample(self):
+        '''
+        generate random action
+
+        :return: action to execute
+        '''
+        return np.random.randint(0, self.action_space_n)
+
+    def tile2pos(self, i):
+        '''
+        :param i: tile number
+        :return: position coordinates
+        '''
+        if i < 0:
+            return None
+        return self.pairs[int(i)]
+
+    def pos2tile(self, pos):
+        '''
+        :param pos: position ccordinates
+        :return: tile number
+        '''
+        i = pos[0] * self.width + pos[1]
+        if i < (self.width * self.height):
+            return i
+        return -1
